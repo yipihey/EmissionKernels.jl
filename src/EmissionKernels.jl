@@ -20,8 +20,10 @@ module EmissionKernels
 
 using KernelAbstractions
 const KA = KernelAbstractions
+import Adapt
 
 export backend, has_backend, device_zeros, to_device, to_host
+export CoolingTables, build_cooling_tables, cooling_rate_total_tab
 # radiative coefficients (re-exported by ChemistryKernels)
 export ceHI, ceHeI, ceHeII, ciHI, ciHeI, ciHeII, ciHeIS,
        reHII, reHeII1, reHeII2, reHeIII, brem,
@@ -75,5 +77,6 @@ include("cooling_hd.jl")         # HDlte, HDlow
 include("cooling_compton.jl")    # comp1_cmb, comp2_cmb, COMPA
 include("cooling_metal.jl")      # MetalAbundances, metal_*; the _cool_*/_fion_* internals
 include("emission.jl")           # per-channel/per-line API + cooling_rate_total
+include("cooling_tables.jl")     # optional log–log cooling lookup (mirrors cooling_rate_total)
 
 end # module EmissionKernels
