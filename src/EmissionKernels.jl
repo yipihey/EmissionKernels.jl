@@ -29,7 +29,8 @@ export ceHI, ceHeI, ceHeII, ciHI, ciHeI, ciHeII, ciHeIS,
        reHII, reHeII1, reHeII2, reHeIII, brem,
        GAHI, GAH2, GAHe, GAHp, GAel, H2LTE, HDlte, HDlow,
        comp1_cmb, comp2_cmb,
-       MetalAbundances, metal_abund, metal_cooling_rate
+       MetalAbundances, metal_abund, metal_cooling_rate,
+       Gamma_PE, Lambda_gr, Lambda_dust
 
 # ── backend registry (own copy; each KA package owns its own — see PPMKernels etc.) ──
 const _BACKENDS = Dict{Symbol,Any}(:cpu => CPU())
@@ -76,6 +77,7 @@ include("cooling_h2.jl")         # GAHI…H2LTE
 include("cooling_hd.jl")         # HDlte, HDlow
 include("cooling_compton.jl")    # comp1_cmb, comp2_cmb, COMPA
 include("cooling_metal.jl")      # MetalAbundances, metal_*; the _cool_*/_fion_* internals
+include("cooling_dust.jl")       # Gamma_PE, Lambda_gr, Lambda_dust (grain thermal channels)
 include("emission.jl")           # per-channel/per-line API + cooling_rate_total
 include("cooling_tables.jl")     # optional log–log cooling lookup (mirrors cooling_rate_total)
 
