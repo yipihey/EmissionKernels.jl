@@ -38,10 +38,15 @@ export emiss_HI_lyalpha, emiss_H_collion, emiss_H_recomb, emiss_brem,
 # Identical algebra to the `h2`/`hd` blocks of the legacy cooling assembler.
 @inline function emiss_H2(nHI, nHII, nHeI, nde, nH2, T, z; ih2optical::Bool=false, nH=nothing)
     R = typeof(T); one_ = one(R); Tc = comp2_cmb(R(z))
+    # F32 GUARD: below ~5 K BOTH the LTE rate and the low-density collision sum
+    # underflow Float32 → h2lte/galdl = 0/0 = NaN.  When galdl → 0 the physical
+    # limit is the collision-limited one, Λ → galdl → 0: branch on it.
     galdl = GAHI(T)*nHI + GAH2(T)*nH2 + GAHe(T)*nHeI + GAHp(T)*nHII + GAel(T)*nde
-    cool_gas = H2LTE(T) / (one_ + H2LTE(T) / galdl)
+    h2l = H2LTE(T)
+    cool_gas = galdl > zero(R) ? h2l / (one_ + h2l / galdl) : zero(R)
     galdl_c = GAHI(Tc)*nHI + GAH2(Tc)*nH2 + GAHe(Tc)*nHeI + GAHp(Tc)*nHII + GAel(Tc)*nde
-    cool_cmb = H2LTE(Tc) / (one_ + H2LTE(Tc) / galdl_c)
+    h2l_c = H2LTE(Tc)
+    cool_cmb = galdl_c > zero(R) ? h2l_c / (one_ + h2l_c / galdl_c) : zero(R)
     fudge = one_
     if ih2optical && nH !== nothing
         fudge = min((R(nH) / R(8.0e9))^R(-0.45), one_)
@@ -133,11 +138,12 @@ EXACT original term order (He cooling omitted, as in the reduced network). Chemi
     galdl = GAHI(T) * nHI + GAH2(T) * nH2 + GAHe(T) * nHeI +
             GAHp(T) * nHII + GAel(T) * nde
     h2lte = H2LTE(T)
-    cool_gas = h2lte / (one_ + h2lte / galdl)
+    # F32 GUARD: sub-5K both limits underflow f32 → 0/0 (see emiss_H2)
+    cool_gas = galdl > zero(R) ? h2lte / (one_ + h2lte / galdl) : zero(R)
     galdl_c = GAHI(Tc) * nHI + GAH2(Tc) * nH2 + GAHe(Tc) * nHeI +
               GAHp(Tc) * nHII + GAel(Tc) * nde
     h2lte_c  = H2LTE(Tc)
-    cool_cmb = h2lte_c / (one_ + h2lte_c / galdl_c)
+    cool_cmb = galdl_c > zero(R) ? h2lte_c / (one_ + h2lte_c / galdl_c) : zero(R)
     fudge = one_
     if ih2optical && nH !== nothing
         fudge = min((R(nH) / R(8.0e9))^R(-0.45), one_)
