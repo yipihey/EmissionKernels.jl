@@ -1,7 +1,7 @@
 name = "EmissionKernels"
 uuid = "1a2b3c4d-0013-4000-8000-000000000013"
 authors = ["T. Abel and contributors"]
-version = "0.1.0"
+version = "0.1.1"
 
 # Per-channel / per-line radiative emissivity for the primordial+metal network — the
 # foundation layer beneath ChemistryKernels. Pure, precision-generic @inline kernels;
