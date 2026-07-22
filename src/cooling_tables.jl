@@ -11,7 +11,7 @@
 # `cooling_rate_total_tab` is the opt-in twin with identical term order.
 
 # Tabulated columns IN ORDER: the four atomic channels, the five GA* H₂ density-limited
-# rates, the H₂ LTE rate, and the two HD rates.  All are > 0 (floored), so log₁₀ is safe.
+# rates, the H₂ LTE rate, and the two HD rates. Exact-zero nodes are encoded as `-Inf`.
 const _CT_COLS = (:ceHI, :ciHI, :reHII, :brem,
                   :GAHI, :GAH2, :GAHe, :GAHp, :GAel, :H2LTE,
                   :HDlte, :HDlow)
@@ -21,14 +21,15 @@ const _NCT = length(_CT_COLS)
     CoolingTables(logk, x0, invdx, N)
 
 Precomputed log–log cooling table: `(N, $(_NCT))` array of `log₁₀(coeff)` on a uniform
-`log₁₀T` grid (`x0=log₁₀Tmin`, `invdx=1/Δlog₁₀T`).  Device-resident (adapts inside a kernel
+`log₁₀T` grid, with exact zero encoded as `-Inf` (`x0=log₁₀Tmin`,
+`invdx=1/Δlog₁₀T`). Device-resident (adapts inside a kernel
 via `Adapt`).  Build with [`build_cooling_tables`](@ref); use via
 `cooling_rate_total(...; tables=…)` / [`cooling_rate_total_tab`](@ref).
 """
-struct CoolingTables{A}
+struct CoolingTables{A,R}
     logk::A
-    x0::Float64
-    invdx::Float64
+    x0::R
+    invdx::R
     N::Int
 end
 Adapt.@adapt_structure CoolingTables
@@ -53,25 +54,34 @@ function build_cooling_tables(; Tmin::Real = 1.0, Tmax::Real = 1.0e9, N::Int = 1
                 GAHI(Tj), GAH2(Tj), GAHe(Tj), GAHp(Tj), GAel(Tj), H2LTE(Tj),
                 HDlte(Tj), HDlow(Tj))
         @inbounds for c in 1:_NCT
-            M[j, c] = log10(max(vals[c], R(1.0e-300)))
+            v = vals[c]
+            M[j, c] = v > zero(R) ? log10(v) : -R(Inf)
         end
     end
     dev = to_device(EmissionKernels.backend(backend), M, R)
-    return CoolingTables(dev, x0, 1.0 / dx, N)
+    return CoolingTables(dev, R(x0), R(1.0 / dx), N)
 end
 
 # Locate T on the log grid → (lower-node 1-based row i, fraction f), clamped to endpoints.
 @inline function _ct_locate(x0, invdx, N::Int, T)
-    s = (log10(Float64(T)) - x0) * invdx
-    s = clamp(s, 0.0, Float64(N) - 1.0 - 1.0e-9)
+    R = typeof(T)
+    s = (log10(T) - R(x0)) * R(invdx)
+    smax = R(N - 1)
+    s = clamp(s, zero(R), smax - eps(R)*smax)
     b = unsafe_trunc(Int, s)
-    return b + 1, oftype(T, s - b)
+    return b + 1, s - R(b)
 end
-# One column's interpolated coefficient (linear in log₁₀T, log₁₀ coeff), exponentiated.
+# Positive endpoints use log–log interpolation. Zero endpoints remain exact and a
+# mixed boundary cell uses a linear ramp, so no interpolation ever forms `Inf - Inf`.
 @inline function _ct_read(L, N::Int, i::Int, f, c::Int)
     @inbounds lo = L[i + (c - 1) * N]
     @inbounds hi = L[i + 1 + (c - 1) * N]
-    return exp10(lo + f * (hi - lo))
+    lo_finite = isfinite(lo)
+    hi_finite = isfinite(hi)
+    lo_finite && hi_finite && return exp10(lo + f * (hi - lo))
+    !lo_finite && !hi_finite && return zero(f)
+    lo_finite && return (one(f) - f) * exp10(lo)
+    return f * exp10(hi)
 end
 
 """
@@ -98,11 +108,11 @@ analytic (cheap / out of the hot tabulated set).
     galdl = _ct_read(L,N,iT,fT,5)*nHI + _ct_read(L,N,iT,fT,6)*nH2 + _ct_read(L,N,iT,fT,7)*nHeI +
             _ct_read(L,N,iT,fT,8)*nHII + _ct_read(L,N,iT,fT,9)*nde
     h2lte = _ct_read(L,N,iT,fT,10)
-    cool_gas = h2lte / (one_ + h2lte / galdl)
+    cool_gas = _two_level_cooling(h2lte, galdl)
     galdl_c = _ct_read(L,N,iC,fC,5)*nHI + _ct_read(L,N,iC,fC,6)*nH2 + _ct_read(L,N,iC,fC,7)*nHeI +
               _ct_read(L,N,iC,fC,8)*nHII + _ct_read(L,N,iC,fC,9)*nde
     h2lte_c  = _ct_read(L,N,iC,fC,10)
-    cool_cmb = h2lte_c / (one_ + h2lte_c / galdl_c)
+    cool_cmb = _two_level_cooling(h2lte_c, galdl_c)
     fudge = one_
     if ih2optical && nH !== nothing
         fudge = min((R(nH) / R(8.0e9))^R(-0.45), one_)
@@ -111,10 +121,9 @@ analytic (cheap / out of the hot tabulated set).
 
     hd = zero(R)
     if T > Tc
-        hdlte  = _ct_read(L,N,iT,fT,11)
-        hdlte1 = hdlte / nHI
-        hdlow1 = max(_ct_read(L,N,iT,fT,12), R(TINY))
-        hd = nHD * hdlte / (one_ + hdlte1 / hdlow1)
+        hdlte = _ct_read(L,N,iT,fT,11)
+        hdlow = _ct_read(L,N,iT,fT,12)
+        hd = nHD * _two_level_cooling(hdlte, nHI * hdlow)
     end
 
     compton = comp1_cmb(R(z)) * (T - Tc) * nde

@@ -2,7 +2,7 @@
 #   • metal per-ion / per-line / ion-fraction parity vs the draft (metal_cooling.pro);
 #   • per-channel & diagnostics consistency (channels sum == cooling_rate_total);
 #   • @scalarkernel self-parity (catches a botched re-point without the macOS oracle);
-#   • GOLDEN bit-identity: cooling_rate_total reproduces the pre-refactor -cooling_edot;
+#   • frozen regression values for the exact-zero cooling model;
 #   • ForwardDiff differentiability + f32/f64 agreement.
 
 using EmissionKernels
@@ -30,13 +30,13 @@ const REF_FION = Dict(
  3000.0=> (0.001826335920470478, 0.9955666658519341, 0.9533238603907912),
 )
 
-# pre-refactor golden cooling_edot (captured from ChemistryKernels before the move):
+# Frozen regression values for the exact-zero cooling model:
 # state => (no_metal, with_solar_metal)
 const GOLD = (
  (nHI=0.7,nHII=0.3,nHeI=0.06,nde=0.3,nH2=1e-3,nHD=1e-6,T=3000.0,z=30.0,
-  e_no=-2.396333826229013e-25, e_m=-5.593173118817311e-25),
+  e_no=-2.3266797334816296e-25, e_m=-5.523519026069927e-25),
  (nHI=0.99,nHII=0.01,nHeI=0.08,nde=0.01,nH2=1e-5,nHD=1e-8,T=150.0,z=0.0,
-  e_no=-4.074876222048002e-29, e_m=-3.9535955487627824e-27),
+  e_no=-1.1840363166958693e-29, e_m=-3.9246871497092614e-27),
 )
 
 function _eps(T, z)
@@ -107,13 +107,29 @@ end
     @test all(isapprox.(Float64.(gb32), gb; rtol=1e-4))
 end
 
-@testset "GOLDEN bit-identity: cooling_rate_total == -(pre-refactor cooling_edot)" begin
+@testset "exact-zero cooling regression" begin
     ab = metal_abund(solar=1.0)
     for s in GOLD
         c_no = cooling_rate_total(s.nHI,s.nHII,s.nHeI,s.nde,s.nH2,s.nHD,s.T,s.z)
         c_m  = cooling_rate_total(s.nHI,s.nHII,s.nHeI,s.nde,s.nH2,s.nHD,s.T,s.z; nH=1.0, metals=ab)
         @test c_no == -s.e_no                    # exact (same code, relocated)
         @test c_m  == -s.e_m
+    end
+end
+
+@testset "zero-density channels and tables are finite" begin
+    for R in (Float64, Float32)
+        z = zero(R); T = R(100)
+        @test emiss_H2(z,z,z,z,z,T,R(20)) == z
+        @test emiss_HD(z,z,T,R(20)) == z
+        @test cooling_rate_total(z,z,z,z,z,z,T,R(20)) == z
+        @test Gamma_PE(T, one(R), one(R), z) == z
+        @test ciHeI(T) == z
+        @test ciHeII(T) == z
+        ct = build_cooling_tables(; precision=R, backend=:cpu, N=128)
+        tab = cooling_rate_total_tab(ct,z,z,z,z,z,z,T,R(20))
+        @test tab == z
+        @test isfinite(tab)
     end
 end
 

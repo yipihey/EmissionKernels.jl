@@ -6,8 +6,7 @@
 # reHII/reHeII2/reHeIII).
 # The collisional excitation, collisional ionization, recombination cooling, and
 # bremsstrahlung cooling channels are all assumed active (the reduced network
-# always enables them), so only the active branch is transcribed — the "else
-# return tiny" branches are omitted.
+# always enables them). Inactive collisional-ionisation branches return exact zero.
 #
 # Pattern:
 #   R = typeof(T)          — the precision type (Float64 or Float32 or any Real)
@@ -56,21 +55,17 @@ end
 
 # Inline k1 rate: Abel et al (1997) degree-8 fit in logTev.
 # Horner form for best f32 stability.
-# Polynomial always evaluated; if (T_ev <= 0.8) k1 = fmax(tiny, k1).
+# The fit is evaluated continuously and naturally underflows to zero at low T.
 @inline function _k1_inline(T::Real)
     R = typeof(T)
+    T > zero(R) || return zero(R)
     Tev = T / R(11605.0)
     x = log(Tev)
     # Horner: c0 + x*(c1 + x*(c2 + x*(c3 + x*(c4 + x*(c5 + x*(c6 + x*(c7 + x*c8)))))))
     poly = R(-32.71396786375) + x*(R(13.53655609057) + x*(R(-5.739328757388) +
            x*(R(1.563154982022) + x*(R(-0.2877056004391) + x*(R(0.03482559773736999) +
            x*(R(-0.00263197617559) + x*(R(0.0001119543953861) + x*R(-2.039149852002e-6))))))))
-    k1 = exp(poly)
-    # if (T_ev <= 0.8) k1 = fmax(tiny, k1)
-    if Tev <= R(0.8)
-        k1 = max(R(1.0e-20), k1)
-    end
-    return k1
+    return max(exp(poly), zero(R))
 end
 
 @inline function ciHI(T::Real)
@@ -79,11 +74,11 @@ end
 end
 @scalarkernel ciHI
 
-# Inline k3 rate: Abel et al (1997), degree-8 fit. Tev <= 0.8 → tiny.
+# Inline k3 rate: Abel et al (1997), degree-8 fit. Tev <= 0.8 is inactive.
 @inline function _k3_inline(T::Real)
     R = typeof(T)
     Tev = T / R(11605.0)
-    Tev <= R(0.8) && return R(1.0e-20)
+    Tev <= R(0.8) && return zero(R)
     x = log(Tev)
     poly = R(-44.09864886561001) + x*(R(23.91596563469) + x*(R(-10.75323019821) +
            x*(R(3.058038757198) + x*(R(-0.5685118909884001) + x*(R(0.06795391233790001) +
@@ -97,11 +92,11 @@ end
 end
 @scalarkernel ciHeI
 
-# Inline k5 rate: Abel et al (1997), degree-8 fit. Tev <= 0.8 → tiny.
+# Inline k5 rate: Abel et al (1997), degree-8 fit. Tev <= 0.8 is inactive.
 @inline function _k5_inline(T::Real)
     R = typeof(T)
     Tev = T / R(11605.0)
-    Tev <= R(0.8) && return R(1.0e-20)
+    Tev <= R(0.8) && return zero(R)
     x = log(Tev)
     poly = R(-68.71040990212001) + x*(R(43.93347632635) + x*(R(-18.48066993568) +
            x*(R(4.701626486759002) + x*(R(-0.7692466334492) + x*(R(0.08113042097303) +

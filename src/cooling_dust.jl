@@ -21,7 +21,8 @@
 # ψ = G₀√T / nₑ.  Multiply by n_H to get the volumetric heating rate [erg/cm³/s].
 @inline function Gamma_PE(T_gas::Real, G0::Real, Z_rel::Real, n_e::Real)
     R = typeof(T_gas)
-    ψ   = G0 * sqrt(T_gas) / max(n_e, R(1e-20))
+    (G0 > zero(R) && Z_rel > zero(R) && T_gas > zero(R) && n_e > zero(R)) || return zero(R)
+    ψ   = G0 * sqrt(T_gas) / n_e
     # Two-branch efficiency: collisional de-excitation (first) and recombination (second)
     ε_1 = R(4.87e-2) / (one(R) + R(4e-3) * ψ^R(0.73))
     ε_2 = R(3.65e-2) * (T_gas / R(1e4))^R(0.7) / (one(R) + R(2e-4) * ψ)

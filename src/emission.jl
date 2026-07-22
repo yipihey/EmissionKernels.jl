@@ -36,17 +36,20 @@ export emiss_HI_lyalpha, emiss_H_collion, emiss_H_recomb, emiss_brem,
 
 # ── H₂ / HD band emissivities (Galli-Palla two-level w/ CMB floor; HD CMB-gated) ──
 # Identical algebra to the `h2`/`hd` blocks of the legacy cooling assembler.
+@inline function _two_level_cooling(lte, low_density)
+    (lte > zero(lte) && low_density > zero(low_density)) || return zero(lte)
+    return lte / (one(lte) + lte / low_density)
+end
+
 @inline function emiss_H2(nHI, nHII, nHeI, nde, nH2, T, z; ih2optical::Bool=false, nH=nothing)
     R = typeof(T); one_ = one(R); Tc = comp2_cmb(R(z))
     # F32 GUARD: below ~5 K BOTH the LTE rate and the low-density collision sum
     # underflow Float32 → h2lte/galdl = 0/0 = NaN.  When galdl → 0 the physical
     # limit is the collision-limited one, Λ → galdl → 0: branch on it.
     galdl = GAHI(T)*nHI + GAH2(T)*nH2 + GAHe(T)*nHeI + GAHp(T)*nHII + GAel(T)*nde
-    h2l = H2LTE(T)
-    cool_gas = galdl > zero(R) ? h2l / (one_ + h2l / galdl) : zero(R)
+    cool_gas = _two_level_cooling(H2LTE(T), galdl)
     galdl_c = GAHI(Tc)*nHI + GAH2(Tc)*nH2 + GAHe(Tc)*nHeI + GAHp(Tc)*nHII + GAel(Tc)*nde
-    h2l_c = H2LTE(Tc)
-    cool_cmb = galdl_c > zero(R) ? h2l_c / (one_ + h2l_c / galdl_c) : zero(R)
+    cool_cmb = _two_level_cooling(H2LTE(Tc), galdl_c)
     fudge = one_
     if ih2optical && nH !== nothing
         fudge = min((R(nH) / R(8.0e9))^R(-0.45), one_)
@@ -57,8 +60,7 @@ end
 @inline function emiss_HD(nHI, nHD, T, z)
     R = typeof(T); Tc = comp2_cmb(R(z))
     T > Tc || return zero(R)
-    hdlte = HDlte(T)
-    return nHD * hdlte / (one(R) + (hdlte / nHI) / max(HDlow(T), R(TINY)))
+    return nHD * _two_level_cooling(HDlte(T), nHI * HDlow(T))
 end
 
 # ── Compton (CMB inverse-Compton scattering; signed: <0 ⇒ heating) ────────────
@@ -138,12 +140,11 @@ EXACT original term order (He cooling omitted, as in the reduced network). Chemi
     galdl = GAHI(T) * nHI + GAH2(T) * nH2 + GAHe(T) * nHeI +
             GAHp(T) * nHII + GAel(T) * nde
     h2lte = H2LTE(T)
-    # F32 GUARD: sub-5K both limits underflow f32 → 0/0 (see emiss_H2)
-    cool_gas = galdl > zero(R) ? h2lte / (one_ + h2lte / galdl) : zero(R)
+    cool_gas = _two_level_cooling(h2lte, galdl)
     galdl_c = GAHI(Tc) * nHI + GAH2(Tc) * nH2 + GAHe(Tc) * nHeI +
               GAHp(Tc) * nHII + GAel(Tc) * nde
     h2lte_c  = H2LTE(Tc)
-    cool_cmb = galdl_c > zero(R) ? h2lte_c / (one_ + h2lte_c / galdl_c) : zero(R)
+    cool_cmb = _two_level_cooling(h2lte_c, galdl_c)
     fudge = one_
     if ih2optical && nH !== nothing
         fudge = min((R(nH) / R(8.0e9))^R(-0.45), one_)
@@ -152,10 +153,7 @@ EXACT original term order (He cooling omitted, as in the reduced network). Chemi
 
     hd = zero(R)
     if T > Tc
-        hdlte  = HDlte(T)
-        hdlte1 = hdlte / nHI
-        hdlow1 = max(HDlow(T), R(TINY))
-        hd = nHD * hdlte / (one_ + hdlte1 / hdlow1)
+        hd = nHD * _two_level_cooling(HDlte(T), nHI * HDlow(T))
     end
 
     compton = comp1_cmb(R(z)) * (T - Tc) * nde
