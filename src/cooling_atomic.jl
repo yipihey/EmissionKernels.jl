@@ -175,3 +175,18 @@ end
     return R(1.43e-27) * sqrt(T) * gaunt
 end
 @scalarkernel brem
+
+"""
+    brem_Z(T, Z)
+
+Free–free emission coefficient [erg cm³ s⁻¹] for ions of charge `Z`: 1.43e-27 Z² √T ḡ(T/Z²),
+with the frequency-integrated Gaunt factor ḡ of `brem` evaluated at T/Z² (ḡ depends on
+kT/Z² Ry).  `brem_Z(T, 1) == brem(T)` to round-off; used for He²⁺ in `cooling_rate_helium`
+(the default H⁺ path keeps `brem` and its bit-identical sum).
+"""
+@inline function brem_Z(T::Real, Z::Real)
+    R = typeof(T)
+    Z2 = R(Z) * R(Z)
+    gaunt = R(1.1) + R(0.34) * exp(-(R(5.5) - log10(T / Z2))^2 / R(3.0))
+    return R(1.43e-27) * Z2 * sqrt(T) * gaunt
+end

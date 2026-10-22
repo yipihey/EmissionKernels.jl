@@ -24,6 +24,7 @@ import Adapt
 
 export backend, has_backend, device_zeros, to_device, to_host
 export CoolingTables, build_cooling_tables, cooling_rate_total_tab
+export cooling_rate_helium, helium_channels, brem_Z
 # radiative coefficients (re-exported by ChemistryKernels)
 export ceHI, ceHeI, ceHeII, ciHI, ciHeI, ciHeII, ciHeIS,
        reHII, reHeII1, reHeII2, reHeIII, brem,

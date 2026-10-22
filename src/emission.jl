@@ -118,6 +118,44 @@ metals, total) for inspection. `total` matches `cooling_rate_total` to summation
             h2=h2, hd=hd, compton=comp, metals=met, total=tot)
 end
 
+# ── helium atomic cooling (the Cen 1992 / Anninos et al. 1997 set; NOT in cooling_rate_total) ──
+"""
+    cooling_rate_helium(nHeI, nHeII, nHeIII, nde, T) -> Λ_He
+
+Helium atomic cooling [erg s⁻¹ cm⁻³] of the Anninos, Zhang, Abel & Norman (1997) /
+Cen (1992) set, which `cooling_rate_total` omits for reduced-network parity: He I 2³S
+collisional excitation (∝ n_e² n_HeII), He II collisional excitation, He I and He II
+collisional ionisation (24.59 and 54.42 eV per event), He I 2³S collisional ionisation
+(∝ n_e² n_HeII), He II radiative and dielectronic recombination, He III recombination,
+and the He⁺/He²⁺ bremsstrahlung (Z² weights 1 and 4; Gaunt factor at T/Z² for He²⁺).
+Number densities physical
+[cm⁻³]; `nHeII`/`nHeIII` are ION number densities (not the ×4 mass convention).  Pure.
+"""
+@inline function cooling_rate_helium(nHeI, nHeII, nHeIII, nde, T)
+    R = typeof(T)
+    return (ceHeI(T) * nde + ceHeII(T) + ciHeII(T) + ciHeIS(T) * nde +
+            reHeII1(T) + reHeII2(T)) * nHeII * nde +
+           ciHeI(T) * nHeI * nde +
+           reHeIII(T) * nHeIII * nde +
+           brem(T) * nHeII * nde + brem_Z(T, 2) * nHeIII * nde
+end
+
+"""
+    helium_channels(nHeI, nHeII, nHeIII, nde, T) -> NamedTuple
+
+Per-channel breakdown of [`cooling_rate_helium`](@ref) (excitation, collisional
+ionisation incl. the 2³S channel, recombination, bremsstrahlung, total).  Inspection only.
+"""
+@inline function helium_channels(nHeI, nHeII, nHeIII, nde, T)
+    R = typeof(T)
+    exc = (ceHeI(T) * nde + ceHeII(T)) * nHeII * nde
+    ci  = ciHeI(T) * nHeI * nde + (ciHeII(T) + ciHeIS(T) * nde) * nHeII * nde
+    rec = (reHeII1(T) + reHeII2(T)) * nHeII * nde + reHeIII(T) * nHeIII * nde
+    bre = brem(T) * nHeII * nde + brem_Z(T, 2) * nHeIII * nde
+    return (excitation = exc, collisional_ionisation = ci, recombination = rec, brem = bre,
+            total = exc + ci + rec + bre)
+end
+
 # ── the summed cooling rate ChemistryKernels consumes (bit-identical to legacy edot) ──
 """
     cooling_rate_total(nHI,nHII,nHeI,nde,nH2,nHD,T,z; ih2optical, nH, metals) -> Λ
